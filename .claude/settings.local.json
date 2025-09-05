@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:fits.gsfc.nasa.gov)",
+      "WebFetch(domain:pixinsight.com)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
