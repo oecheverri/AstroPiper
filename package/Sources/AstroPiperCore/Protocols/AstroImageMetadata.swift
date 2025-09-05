@@ -174,7 +174,7 @@ public struct SkyCoordinates: Sendable, Codable, Equatable {
 }
 
 /// Represents pixel binning configuration
-public struct ImageBinning: Sendable, Codable, Equatable {
+public struct ImageBinning: Sendable, Codable, Equatable, Hashable {
     /// Horizontal binning factor
     public let horizontal: Int
     

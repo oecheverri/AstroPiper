@@ -127,6 +127,7 @@ public struct FITSImageLoader {
     }
     
     /// Extract WCS coordinate system information from FITS headers
+    /// Supports both modern CD matrix format and legacy CDELT/CROTA format
     private static func extractWCSInfo(from header: FITSHeader) -> WCSInfo? {
         // Check if basic WCS keywords are present
         guard let crpix1 = header.doubleValue(for: "CRPIX1"),
@@ -136,29 +137,66 @@ public struct FITSImageLoader {
             return nil
         }
         
-        // Get pixel scale (CDELT or CD matrix)
-        let cdelt1 = header.doubleValue(for: "CDELT1") ?? header.doubleValue(for: "CD1_1") ?? 0.0
-        let cdelt2 = header.doubleValue(for: "CDELT2") ?? header.doubleValue(for: "CD2_2") ?? 0.0
-        
-        // Get coordinate types
+        // Extract coordinate types
         let ctype1 = header.stringValue(for: "CTYPE1") ?? "RA"
         let ctype2 = header.stringValue(for: "CTYPE2") ?? "DEC"
         
-        // Extract projection type from coordinate types
+        // Extract projection type from coordinate types  
         let projection = extractProjection(from: ctype1)
         
         // Get coordinate system and equinox
         let coordSys = header.stringValue(for: "RADESYS") ?? header.stringValue(for: "RADECSYS")
         let equinox = header.doubleValue(for: "EQUINOX") ?? header.doubleValue(for: "EPOCH")
         
+        // Extract transformation matrix - prefer CD matrix over CDELT/CROTA
+        var transformMatrix: WCSMath.TransformMatrix?
+        var pixelScale: PixelScale
+        var rotationAngle: Double?
+        
+        if let cd11 = header.doubleValue(for: "CD1_1"),
+           let cd12 = header.doubleValue(for: "CD1_2"),
+           let cd21 = header.doubleValue(for: "CD2_1"),
+           let cd22 = header.doubleValue(for: "CD2_2") {
+            
+            // Modern CD matrix format
+            transformMatrix = WCSMath.TransformMatrix(cd11: cd11, cd12: cd12, cd21: cd21, cd22: cd22)
+            
+            // Calculate equivalent CDELT for backward compatibility  
+            let scaleX = sqrt(cd11 * cd11 + cd21 * cd21)
+            let scaleY = sqrt(cd12 * cd12 + cd22 * cd22)
+            pixelScale = PixelScale(x: scaleX, y: scaleY)
+            
+        } else if let cdelt1 = header.doubleValue(for: "CDELT1"),
+                  let cdelt2 = header.doubleValue(for: "CDELT2") {
+            
+            // Legacy CDELT/CROTA format
+            pixelScale = PixelScale(x: cdelt1, y: cdelt2)
+            rotationAngle = header.doubleValue(for: "CROTA2") ?? header.doubleValue(for: "CROTA1")
+            
+            // Create equivalent CD matrix if rotation is present
+            if let rotation = rotationAngle {
+                transformMatrix = WCSMath.TransformMatrix.fromCDELT(
+                    cdelt1: cdelt1, 
+                    cdelt2: cdelt2, 
+                    crota2: rotation
+                )
+            }
+            
+        } else {
+            // No scale information found
+            return nil
+        }
+        
         return WCSInfo(
             referencePixel: PixelCoordinate(x: crpix1, y: crpix2),
             referenceValue: WorldCoordinate(longitude: crval1, latitude: crval2),
-            pixelScale: PixelScale(x: cdelt1, y: cdelt2),
+            pixelScale: pixelScale,
             coordinateTypes: CoordinateTypes(x: ctype1, y: ctype2),
             projection: projection,
             coordinateSystem: coordSys,
-            equinox: equinox
+            equinox: equinox,
+            transformMatrix: transformMatrix,
+            rotationAngle: rotationAngle
         )
     }
     
