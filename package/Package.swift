@@ -14,7 +14,7 @@ let package = Package(
         // Products define the executables and libraries a package produces, making them visible to other packages.
         .library(
             name: "AstroPiperKit",
-            targets: ["AstroPiperCore", "AstroPiperUI"]
+            targets: ["AstroPiperCore", "AstroPiper"]
         ),
     ],
     targets: [
@@ -24,10 +24,15 @@ let package = Package(
             name: "AstroPiperCore"
         ),
         .target(
-            name: "AstroPiperUI"
+            name: "AstroPiper",
+            dependencies: ["AstroPiperCore"]
         ),
         .testTarget(
             name: "AstroPiperTests",
+            dependencies: ["AstroPiperCore", "AstroPiper"]
+        ),
+        .testTarget(
+            name: "AstroPiperCoreTests",
             dependencies: ["AstroPiperCore"]
         ),
     ]
