@@ -114,31 +114,39 @@ public struct MetadataInspector: View {
     
     // MARK: - Tab Selector
     
+    private var sortedAvailableTabs: [TabType] {
+        Array(availableTabs).sorted { tabOrder($0) < tabOrder($1) }
+    }
+    
     @ViewBuilder
     private var tabSelector: some View {
-        let sortedTabs = Array(availableTabs).sorted { tabOrder($0) < tabOrder($1) }
         HStack(spacing: 0) {
-            ForEach(sortedTabs, id: \.self) { tab in
-                Button {
-                    selectedTab = tab
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: tab.icon)
-                            .font(.caption)
-                        Text(tab.title)
-                            .font(.caption)
-                    }
-                    .foregroundColor(selectedTab == tab ? .primary : .secondary)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(selectedTab == tab ? .quaternary : .clear)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                }
-                .buttonStyle(.plain)
+            ForEach(sortedAvailableTabs, id: \.self) { tab in
+                tabButton(for: tab)
             }
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
+    }
+    
+    @ViewBuilder
+    private func tabButton(for tab: TabType) -> some View {
+        Button {
+            selectedTab = tab
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: tab.icon)
+                    .font(.caption)
+                Text(tab.title)
+                    .font(.caption)
+            }
+            .foregroundColor(selectedTab == tab ? .primary : .secondary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(selectedTab == tab ? Color.gray.opacity(0.2) : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+        }
+        .buttonStyle(.plain)
     }
     
     private func tabOrder(_ tab: TabType) -> Int {
