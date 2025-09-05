@@ -116,8 +116,9 @@ public struct MetadataInspector: View {
     
     @ViewBuilder
     private var tabSelector: some View {
+        let sortedTabs = Array(availableTabs).sorted { tabOrder($0) < tabOrder($1) }
         HStack(spacing: 0) {
-            ForEach(Array(availableTabs).sorted(by: { tabOrder($0) < tabOrder($1) }), id: \.self) { tab in
+            ForEach(sortedTabs, id: \.self) { tab in
                 Button {
                     selectedTab = tab
                 } label: {
@@ -162,7 +163,8 @@ public struct MetadataInspector: View {
             infoRow("Object", metadata.object)
             
             if let dateObs = metadata.dateObs {
-                infoRow("Observation Date", DateFormatter.iso8601.string(from: dateObs))
+                let formatter = ISO8601DateFormatter()
+                infoRow("Observation Date", formatter.string(from: dateObs))
             }
             
             // Additional observatory metadata from custom headers
@@ -198,7 +200,7 @@ public struct MetadataInspector: View {
             }
             
             if let binning = metadata.binning {
-                infoRow("Binning", "\(binning.x)×\(binning.y)")
+                infoRow("Binning", "\(binning.horizontal)×\(binning.vertical)")
             }
             
             Divider()
@@ -418,6 +420,7 @@ extension PixelFormat {
         switch self {
         case .uint8: return "8-bit unsigned"
         case .uint16: return "16-bit unsigned"
+        case .uint32: return "32-bit unsigned"
         case .int16: return "16-bit signed"
         case .int32: return "32-bit signed"
         case .float32: return "32-bit float"
@@ -432,8 +435,9 @@ extension ColorSpace {
         case .sRGB: return "sRGB"
         case .displayP3: return "Display P3"
         case .grayscale: return "Grayscale"
-        case .linearSRGB: return "Linear sRGB"
-        case .custom: return "Custom"
+        case .linear: return "Linear"
+        case .cie1931XYZ: return "CIE 1931 XYZ"
+        case .rec2020: return "Rec. 2020"
         }
     }
 }
@@ -457,7 +461,7 @@ extension ColorSpace {
         filter: "Luminance",
         ccdTemp: -15.0,
         ccdGain: 0.13,
-        binning: ImageBinning(x: 1, y: 1),
+        binning: ImageBinning(horizontal: 1, vertical: 1),
         fitsHeaders: [
             "TELESCOP": "Celestron EdgeHD 14",
             "INSTRUME": "QSI 683wsg-8",
@@ -469,7 +473,7 @@ extension ColorSpace {
         ]
     )
     
-    return MetadataInspector(metadata: mockMetadata)
+    MetadataInspector(metadata: mockMetadata)
         .preferredColorScheme(.dark)
 }
 
@@ -492,7 +496,7 @@ extension ColorSpace {
         wcs: mockWCS
     )
     
-    return MetadataInspector(metadata: mockMetadata)
+    MetadataInspector(metadata: mockMetadata)
         .preferredColorScheme(.dark)
         .onAppear {
             // Start with WCS tab selected in preview

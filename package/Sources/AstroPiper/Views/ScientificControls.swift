@@ -584,7 +584,7 @@ private struct PreviewScientificImage: AstroImage {
         
         var data = Data(capacity: totalPixels)
         for _ in 0..<Int(count * height) {
-            let value = Int16.random(in: 1000...50000) // Realistic astronomical data range
+            let value = Int16.random(in: 1000...30000) // Realistic astronomical data range
             withUnsafeBytes(of: value) { bytes in
                 data.append(contentsOf: bytes)
             }

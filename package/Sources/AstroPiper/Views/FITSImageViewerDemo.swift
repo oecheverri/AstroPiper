@@ -83,7 +83,7 @@ public struct FITSImageViewerDemo: View {
                     }
                     .buttonStyle(.plain)
                     .padding(.vertical, 4)
-                    .background(selectedImageIndex == index ? .selection : .clear)
+                    .background(selectedImageIndex == index ? Color.blue.opacity(0.2) : Color.clear)
                     .clipShape(RoundedRectangle(cornerRadius: 6))
                 }
             }
@@ -230,7 +230,7 @@ private enum DemoFITSImage {
             filter: "Luminance",
             ccdTemp: -15.0,
             ccdGain: 0.13,
-            binning: ImageBinning(x: 1, y: 1),
+            binning: ImageBinning(horizontal: 1, vertical: 1),
             wcs: wcs,
             fitsHeaders: [
                 "TELESCOP": "Celestron EdgeHD 14",

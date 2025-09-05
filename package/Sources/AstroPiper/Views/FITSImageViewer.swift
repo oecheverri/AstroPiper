@@ -59,10 +59,6 @@ public struct FITSImageViewer: View {
                 .onAppear {
                     setupFITSMetadata()
                 }
-                .onChange(of: image) { _, newImage in
-                    baseImageViewer = ImageViewer(image: newImage)
-                    setupFITSMetadata()
-                }
             
             // Coordinate overlay (when WCS available and enabled)
             if showCoordinateOverlay, let wcsInfo = fitsMetadata?.wcs {

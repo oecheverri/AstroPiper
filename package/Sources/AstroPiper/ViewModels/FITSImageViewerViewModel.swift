@@ -206,26 +206,21 @@ public final class FITSImageViewerViewModel: ObservableObject {
     
     /// Process loaded image and extract metadata
     private func processImage(_ image: any AstroImage) async {
-        do {
-            // Extract FITS metadata
-            if let fits = image.metadata as? FITSImageMetadata {
-                fitsMetadata = fits
-                hasWCSInfo = fits.wcs != nil
-            } else {
-                fitsMetadata = nil
-                hasWCSInfo = false
-            }
-            
-            viewState = .loaded
-        } catch {
-            loadingError = error
-            viewState = .failed(error)
+        // Extract FITS metadata
+        if let fits = image.metadata as? FITSImageMetadata {
+            fitsMetadata = fits
+            hasWCSInfo = fits.wcs != nil
+        } else {
+            fitsMetadata = nil
+            hasWCSInfo = false
         }
+        
+        viewState = .loaded
     }
     
     /// Calculate coordinates and pixel value at cursor position
     private func calculateCurrentCoordinates(at position: CGPoint) {
-        guard let image = image else { return }
+        guard image != nil else { return }
         
         // Convert view coordinates to image pixel coordinates
         let imageCoords = convertToImageCoordinates(position)
@@ -261,8 +256,8 @@ public final class FITSImageViewerViewModel: ObservableObject {
         do {
             // Extract single pixel region
             let region = PixelRegion(
-                x: coordinates.x,
-                y: coordinates.y,
+                x: UInt32(max(0, coordinates.x)),
+                y: UInt32(max(0, coordinates.y)),
                 width: 1,
                 height: 1
             )
@@ -320,7 +315,8 @@ public final class FITSImageViewerViewModel: ObservableObject {
         analysisError = nil
         
         do {
-            let stats = try await statisticsCalculator.calculateStatistics(
+            let calculator = statisticsCalculator
+            let stats = try await calculator.calculateStatistics(
                 for: region,
                 in: image,
                 useRawValues: showRawPixelValues
