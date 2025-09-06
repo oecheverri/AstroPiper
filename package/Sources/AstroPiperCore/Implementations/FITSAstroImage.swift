@@ -23,7 +23,18 @@ public struct FITSAstroImage: AstroImage, Sendable {
         if let region = region {
             return try await extractRegionData(region: region, fitsMetadata: fitsMetadata)
         } else {
-            return try await processFullImageData(fitsMetadata: fitsMetadata)
+            return try await processFullImageData(fitsMetadata: fitsMetadata, applyAutoStretch: false)
+        }
+    }
+    
+    /// Get pixel data with optional histogram stretching for testing
+    public func pixelData(in region: PixelRegion?, applyAutoStretch: Bool) async throws -> Data {
+        let fitsMetadata = try getFITSMetadata()
+        
+        if let region = region {
+            return try await extractRegionData(region: region, fitsMetadata: fitsMetadata)
+        } else {
+            return try await processFullImageData(fitsMetadata: fitsMetadata, applyAutoStretch: applyAutoStretch)
         }
     }
     
@@ -79,12 +90,13 @@ public struct FITSAstroImage: AstroImage, Sendable {
         return fitsMetadata
     }
     
-    /// Process full image data with BZERO/BSCALE transformations
-    private func processFullImageData(fitsMetadata: FITSImageMetadata) async throws -> Data {
+    /// Process full image data with BZERO/BSCALE transformations and optional display scaling
+    private func processFullImageData(fitsMetadata: FITSImageMetadata, applyAutoStretch: Bool = false) async throws -> Data {
         let width = Int(fitsMetadata.dimensions.width)
         let height = Int(fitsMetadata.dimensions.height)
         
-        return try processImageData(
+        // First apply FITS transformations
+        let transformedData = try processImageData(
             data: rawImageData,
             width: width,
             height: height,
@@ -92,6 +104,13 @@ public struct FITSAstroImage: AstroImage, Sendable {
             bzero: fitsMetadata.bzero,
             bscale: fitsMetadata.bscale
         )
+        
+        // Optionally apply display scaling for visibility
+        if applyAutoStretch {
+            return try applyDisplayScaling(transformedData, bitpix: fitsMetadata.bitpix)
+        } else {
+            return transformedData
+        }
     }
     
     /// Extract and process a specific region of the image
@@ -177,6 +196,68 @@ public struct FITSAstroImage: AstroImage, Sendable {
         }
     }
     
+    /// Apply display scaling to make astronomical data visible
+    /// This applies automatic histogram stretching to enhance visibility
+    private func applyDisplayScaling(_ data: Data, bitpix: Int) throws -> Data {
+        switch bitpix {
+        case 16:
+            return try applyDisplayScaling16Bit(data)
+        default:
+            // For now, only handle 16-bit data
+            return data
+        }
+    }
+    
+    /// Apply display scaling for 16-bit data
+    private func applyDisplayScaling16Bit(_ data: Data) throws -> Data {
+        // Convert to UInt16 array for analysis
+        var values: [UInt16] = []
+        values.reserveCapacity(data.count / 2)
+        
+        for i in stride(from: 0, to: data.count, by: 2) {
+            guard i + 1 < data.count else { break }
+            let value = data.withUnsafeBytes { bytes in
+                UInt16(bytes.load(fromByteOffset: i, as: UInt16.self))
+            }
+            values.append(value)
+        }
+        
+        guard !values.isEmpty else { return data }
+        
+        // Calculate histogram percentiles for auto-stretch
+        let sortedValues = values.sorted()
+        let count = sortedValues.count
+        
+        // Use 1% and 99% percentiles for stretching (common in astronomy)
+        let minIndex = max(0, Int(Double(count) * 0.01))
+        let maxIndex = min(count - 1, Int(Double(count) * 0.99))
+        
+        let minValue = sortedValues[minIndex]
+        let maxValue = sortedValues[maxIndex]
+        
+        // Avoid division by zero
+        guard maxValue > minValue else { return data }
+        
+        // Apply linear stretch to full 16-bit range
+        var result = Data(capacity: data.count)
+        let scale = 65535.0 / Double(maxValue - minValue)
+        
+        for value in values {
+            // Handle the subtraction safely to avoid underflow
+            let valueDouble = Double(value)
+            let minValueDouble = Double(minValue)
+            let normalizedValue = max(0.0, valueDouble - minValueDouble)
+            let stretched = max(0, min(65535, Int(normalizedValue * scale)))
+            
+            // Store the stretched value directly - no inversion per FITS standard
+            withUnsafeBytes(of: UInt16(stretched)) { bytes in
+                result.append(contentsOf: bytes)
+            }
+        }
+        
+        return result
+    }
+    
     // MARK: - Data Transformation Methods
     
     private func transformUInt8Data(_ data: Data, scale: Double, zero: Double) throws -> Data {
@@ -184,7 +265,8 @@ public struct FITSAstroImage: AstroImage, Sendable {
         
         for byte in data {
             let rawValue = Double(byte)
-            let physicalValue = scale * rawValue + zero
+            // FITS standard: physical_value = BZERO + BSCALE × array_value
+            let physicalValue = zero + scale * rawValue
             let clampedValue = max(0, min(255, physicalValue))
             result.append(UInt8(clampedValue))
         }
@@ -202,10 +284,14 @@ public struct FITSAstroImage: AstroImage, Sendable {
                 Int16(bytes.load(fromByteOffset: i, as: Int16.self))
             }
             
-            let physicalValue = scale * Double(rawValue) + zero
-            let clampedValue = max(-32768, min(32767, physicalValue))
+            // FITS standard: physical_value = BZERO + BSCALE × array_value
+            let physicalValue = zero + scale * Double(rawValue)
             
-            withUnsafeBytes(of: Int16(clampedValue)) { bytes in
+            // For BITPIX=16 data, clamp to valid 16-bit unsigned range after transformation
+            let clampedValue = max(0, min(65535, physicalValue))
+            
+            // Store as UInt16 - BZERO/BSCALE handles signed-to-unsigned conversion per FITS standard
+            withUnsafeBytes(of: UInt16(clampedValue)) { bytes in
                 result.append(contentsOf: bytes)
             }
         }
@@ -223,7 +309,8 @@ public struct FITSAstroImage: AstroImage, Sendable {
                 Int32(bytes.load(fromByteOffset: i, as: Int32.self))
             }
             
-            let physicalValue = scale * Double(rawValue) + zero
+            // FITS standard: physical_value = BZERO + BSCALE × array_value
+            let physicalValue = zero + scale * Double(rawValue)
             let clampedValue = max(-2147483648, min(2147483647, physicalValue))
             
             withUnsafeBytes(of: Int32(clampedValue)) { bytes in
@@ -244,7 +331,8 @@ public struct FITSAstroImage: AstroImage, Sendable {
                 Float(bytes.load(fromByteOffset: i, as: Float.self))
             }
             
-            let physicalValue = Float(scale * Double(rawValue) + zero)
+            // FITS standard: physical_value = BZERO + BSCALE × array_value
+            let physicalValue = Float(zero + scale * Double(rawValue))
             
             withUnsafeBytes(of: physicalValue) { bytes in
                 result.append(contentsOf: bytes)
@@ -264,7 +352,8 @@ public struct FITSAstroImage: AstroImage, Sendable {
                 Double(bytes.load(fromByteOffset: i, as: Double.self))
             }
             
-            let physicalValue = scale * rawValue + zero
+            // FITS standard: physical_value = BZERO + BSCALE × array_value
+            let physicalValue = zero + scale * rawValue
             
             withUnsafeBytes(of: physicalValue) { bytes in
                 result.append(contentsOf: bytes)
