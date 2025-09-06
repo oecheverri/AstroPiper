@@ -4,19 +4,32 @@ import Foundation
 
 struct FITSImageLoaderTests {
     
-    // Path to real FITS test files
-    private static let sampleFilesPath = "../Sample Files"
-    private static let testFITSFile = "Light_IC2087_180.0s_Bin1_533MC_gain360_20221003-041814_-9.9C_0024.fit"
+    // MARK: - Test File Discovery
     
-    // MARK: - Real File Tests
-    
-    @Test("FITS loader parses real astronomical file correctly")
-    func fitsImageLoaderParsesRealFITSFile() async throws {
-        let testURL = URL(fileURLWithPath: "\(Self.sampleFilesPath)/\(Self.testFITSFile)")
+    /// Get all .fit files from the Resources folder
+    private static func getTestFITSFiles() -> [URL] {
+        guard let resourcesPath = Bundle.module.resourceURL else {
+            return []
+        }
         
-        // Skip if test file doesn't exist
-        guard FileManager.default.fileExists(atPath: testURL.path) else {
-            throw TestSkip("FITS test file not found: \(testURL.path)")
+        do {
+            let resourceContents = try FileManager.default.contentsOfDirectory(at: resourcesPath, includingPropertiesForKeys: nil)
+            return resourceContents.filter { $0.pathExtension.lowercased() == "fit" }
+        } catch {
+            return []
+        }
+    }
+    
+    /// Collection of test FITS file URLs for parameterized testing
+    private static let testFITSFiles: [URL] = getTestFITSFiles()
+    
+    // MARK: - Real File Tests (Parameterized)
+    
+    @Test("FITS loader parses all test files correctly", arguments: testFITSFiles)
+    func fitsImageLoaderParsesRealFITSFiles(testURL: URL) async throws {
+        // Skip if no test files found
+        guard Self.testFITSFiles.count > 0 else {
+            throw TestSkip("No FITS test files found in Resources folder")
         }
         
         let image = try await FITSImageLoader.load(from: testURL)
@@ -25,18 +38,22 @@ struct FITSImageLoaderTests {
         #expect(image.metadata is FITSImageMetadata)
         
         let fitsMetadata = image.metadata as! FITSImageMetadata
-        #expect(fitsMetadata.naxis == 2)
-        #expect(fitsMetadata.bitpix == 16)
-        #expect(fitsMetadata.dimensions.width == 3008)
-        #expect(fitsMetadata.dimensions.height == 3008)
+        
+        // Basic FITS validation that should apply to all our test files
+        #expect(fitsMetadata.naxis == 2, "File: \(testURL.lastPathComponent) should be 2D image")
+        #expect(fitsMetadata.bitpix == 16, "File: \(testURL.lastPathComponent) should be 16-bit")
+        #expect(fitsMetadata.dimensions.width > 0, "File: \(testURL.lastPathComponent) should have valid width")
+        #expect(fitsMetadata.dimensions.height > 0, "File: \(testURL.lastPathComponent) should have valid height")
+        
+        // For our specific sample files, we expect 3008x3008 dimensions
+        #expect(fitsMetadata.dimensions.width == 3008, "File: \(testURL.lastPathComponent) expected width 3008")
+        #expect(fitsMetadata.dimensions.height == 3008, "File: \(testURL.lastPathComponent) expected height 3008")
     }
     
-    @Test("FITS loader completes parsing large file within reasonable time")
-    func fitsImageLoaderPerformance() async throws {
-        let testURL = URL(fileURLWithPath: "\(Self.sampleFilesPath)/\(Self.testFITSFile)")
-        
-        guard FileManager.default.fileExists(atPath: testURL.path) else {
-            throw TestSkip("FITS test file not found")
+    @Test("FITS loader completes parsing all files within reasonable time", arguments: testFITSFiles)
+    func fitsImageLoaderPerformance(testURL: URL) async throws {
+        guard Self.testFITSFiles.count > 0 else {
+            throw TestSkip("No FITS test files found")
         }
         
         let startTime = Date()
@@ -44,60 +61,57 @@ struct FITSImageLoaderTests {
         let duration = Date().timeIntervalSince(startTime)
         
         // Loading ~18MB FITS file should complete within 5 seconds
-        #expect(duration < 5.0)
+        #expect(duration < 5.0, "File: \(testURL.lastPathComponent) took \(duration)s to load")
         #expect(image.metadata is FITSImageMetadata)
         
         let fitsMetadata = image.metadata as! FITSImageMetadata
-        #expect(fitsMetadata.totalPixels == 3008 * 3008)
+        #expect(fitsMetadata.totalPixels == 3008 * 3008, "File: \(testURL.lastPathComponent) should have correct pixel count")
     }
     
-    @Test("FITS metadata extraction validates all critical properties")
-    func fitsImageLoaderExtractsMetadataCorrectly() async throws {
-        let testURL = URL(fileURLWithPath: "\(Self.sampleFilesPath)/\(Self.testFITSFile)")
-        
-        guard FileManager.default.fileExists(atPath: testURL.path) else {
-            throw TestSkip("FITS test file not found")
+    @Test("FITS metadata extraction validates all critical properties", arguments: testFITSFiles)
+    func fitsImageLoaderExtractsMetadataCorrectly(testURL: URL) async throws {
+        guard Self.testFITSFiles.count > 0 else {
+            throw TestSkip("No FITS test files found")
         }
         
         let metadata = try await FITSImageLoader.parseMetadata(from: testURL)
         
         // Verify basic FITS properties
-        #expect(metadata.naxis == 2)
-        #expect(metadata.bitpix == 16)
-        #expect(metadata.bzero == 32768.0)
-        #expect(metadata.bscale == 1.0)
+        #expect(metadata.naxis == 2, "File: \(testURL.lastPathComponent)")
+        #expect(metadata.bitpix == 16, "File: \(testURL.lastPathComponent)")
+        #expect(metadata.bzero == 32768.0, "File: \(testURL.lastPathComponent)")
+        #expect(metadata.bscale == 1.0, "File: \(testURL.lastPathComponent)")
         
-        // Verify image dimensions (3008x3008 from our sample file)
-        #expect(metadata.dimensions.width == 3008)
-        #expect(metadata.dimensions.height == 3008)
-        #expect(metadata.totalPixels == 3008 * 3008)
+        // Verify image dimensions (3008x3008 from our sample files)
+        #expect(metadata.dimensions.width == 3008, "File: \(testURL.lastPathComponent)")
+        #expect(metadata.dimensions.height == 3008, "File: \(testURL.lastPathComponent)")
+        #expect(metadata.totalPixels == 3008 * 3008, "File: \(testURL.lastPathComponent)")
         
         // Verify derived properties
-        #expect(metadata.pixelFormat == .int16)
-        #expect(metadata.colorSpace == .grayscale)
-        #expect(metadata.bytesPerPixel == 2)
-        #expect(metadata.isSignedInteger == true)
-        #expect(metadata.isFloatingPoint == false)
+        #expect(metadata.pixelFormat == .int16, "File: \(testURL.lastPathComponent)")
+        #expect(metadata.colorSpace == .grayscale, "File: \(testURL.lastPathComponent)")
+        #expect(metadata.bytesPerPixel == 2, "File: \(testURL.lastPathComponent)")
+        #expect(metadata.isSignedInteger == true, "File: \(testURL.lastPathComponent)")
+        #expect(metadata.isFloatingPoint == false, "File: \(testURL.lastPathComponent)")
         
         // Verify file metadata
-        #expect(metadata.filename == Self.testFITSFile)
-        #expect(metadata.fileSize != nil)
-        #expect(metadata.fileSize! > 0)
+        #expect(metadata.filename == testURL.lastPathComponent, "File: \(testURL.lastPathComponent)")
+        #expect(metadata.fileSize != nil, "File: \(testURL.lastPathComponent)")
+        #expect(metadata.fileSize! > 0, "File: \(testURL.lastPathComponent)")
     }
     
     @Test("FITS metadata parsing is memory efficient with large files")
     func fitsMetadataParsingMemoryEfficiency() async throws {
-        let testURL = URL(fileURLWithPath: "\(Self.sampleFilesPath)/\(Self.testFITSFile)")
-        
-        guard FileManager.default.fileExists(atPath: testURL.path) else {
-            throw TestSkip("FITS test file not found")
+        // Use first available test file for memory efficiency test
+        guard let firstTestFile = Self.testFITSFiles.first else {
+            throw TestSkip("No FITS test files found")
         }
         
         // Parse metadata multiple times to check for memory leaks
         for _ in 0..<5 {
-            let metadata = try await FITSImageLoader.parseMetadata(from: testURL)
-            #expect(metadata.totalPixels == 3008 * 3008)
-            #expect(metadata.bitpix == 16)
+            let metadata = try await FITSImageLoader.parseMetadata(from: firstTestFile)
+            #expect(metadata.totalPixels == 3008 * 3008, "File: \(firstTestFile.lastPathComponent)")
+            #expect(metadata.bitpix == 16, "File: \(firstTestFile.lastPathComponent)")
             
             // Force deallocation by discarding reference
             _ = metadata
@@ -107,37 +121,35 @@ struct FITSImageLoaderTests {
         #expect(true)
     }
     
-    @Test("FITS astronomical metadata extraction is comprehensive")
-    func fitsImageLoaderExtractsObservatoryMetadata() async throws {
-        let testURL = URL(fileURLWithPath: "\(Self.sampleFilesPath)/\(Self.testFITSFile)")
-        
-        guard FileManager.default.fileExists(atPath: testURL.path) else {
-            throw TestSkip("FITS test file not found")
+    @Test("FITS astronomical metadata extraction is comprehensive", arguments: testFITSFiles)
+    func fitsImageLoaderExtractsObservatoryMetadata(testURL: URL) async throws {
+        guard Self.testFITSFiles.count > 0 else {
+            throw TestSkip("No FITS test files found")
         }
         
         let metadata = try await FITSImageLoader.parseMetadata(from: testURL)
         
         // Check for camera/instrument metadata from our sample files
-        #expect(metadata.customValue(for: "CREATOR") == "ASIAIR PRO")
-        #expect(metadata.customValue(for: "OFFSET") != nil)
+        #expect(metadata.customValue(for: "CREATOR") == "ASIAIR PRO", "File: \(testURL.lastPathComponent)")
+        #expect(metadata.customValue(for: "OFFSET") != nil, "File: \(testURL.lastPathComponent)")
         
         // Verify astronomical metadata interface
-        #expect(metadata.filename?.hasSuffix(".fit") == true)
-        #expect(metadata.fileSize != nil)
-        #expect(metadata.customMetadata.count > 0)
+        #expect(metadata.filename?.hasSuffix(".fit") == true, "File: \(testURL.lastPathComponent)")
+        #expect(metadata.fileSize != nil, "File: \(testURL.lastPathComponent)")
+        #expect(metadata.customMetadata.count > 0, "File: \(testURL.lastPathComponent)")
         
         // Verify exposure and camera settings if present
         if let exptime = metadata.exptime {
-            #expect(exptime > 0.0)
-            #expect(exptime <= 3600.0) // Reasonable exposure limit
+            #expect(exptime > 0.0, "File: \(testURL.lastPathComponent) - exposure time should be positive")
+            #expect(exptime <= 3600.0, "File: \(testURL.lastPathComponent) - exposure time should be reasonable") // Reasonable exposure limit
         }
         
         // Verify binning information if present
         if let binning = metadata.binning {
-            #expect(binning.horizontal >= 1)
-            #expect(binning.vertical >= 1)
-            #expect(binning.horizontal <= 4) // Typical binning limit
-            #expect(binning.vertical <= 4)
+            #expect(binning.horizontal >= 1, "File: \(testURL.lastPathComponent) - binning should be >= 1")
+            #expect(binning.vertical >= 1, "File: \(testURL.lastPathComponent) - binning should be >= 1")
+            #expect(binning.horizontal <= 4, "File: \(testURL.lastPathComponent) - binning should be <= 4") // Typical binning limit
+            #expect(binning.vertical <= 4, "File: \(testURL.lastPathComponent) - binning should be <= 4")
         }
     }
     
@@ -274,12 +286,10 @@ END
     
     // MARK: - FITSAstroImage Pixel Data Tests
     
-    @Test("FITS astro image generates correct pixel data for full image")
-    func fitsAstroImageGeneratesPixelData() async throws {
-        let testURL = URL(fileURLWithPath: "\(Self.sampleFilesPath)/\(Self.testFITSFile)")
-        
-        guard FileManager.default.fileExists(atPath: testURL.path) else {
-            throw TestSkip("FITS test file not found")
+    @Test("FITS astro image generates correct pixel data for full image", arguments: testFITSFiles)
+    func fitsAstroImageGeneratesPixelData(testURL: URL) async throws {
+        guard Self.testFITSFiles.count > 0 else {
+            throw TestSkip("No FITS test files found")
         }
         
         let image = try await FITSImageLoader.load(from: testURL)
@@ -287,87 +297,81 @@ END
         
         // Verify pixel data size (3008x3008 * 2 bytes per pixel)
         let expectedSize = 3008 * 3008 * 2
-        #expect(pixelData.count == expectedSize)
+        #expect(pixelData.count == expectedSize, "File: \(testURL.lastPathComponent) should have correct pixel data size")
         
         // Verify data is not all zeros (should contain actual image data)
         let nonZeroBytes = pixelData.prefix(1000).contains { $0 != 0 }
-        #expect(nonZeroBytes == true)
+        #expect(nonZeroBytes == true, "File: \(testURL.lastPathComponent) should contain actual image data")
     }
     
     @Test("FITS pixel data generation completes efficiently for large images")
     func fitsPixelDataPerformance() async throws {
-        let testURL = URL(fileURLWithPath: "\(Self.sampleFilesPath)/\(Self.testFITSFile)")
-        
-        guard FileManager.default.fileExists(atPath: testURL.path) else {
-            throw TestSkip("FITS test file not found")
+        // Use first test file for performance testing
+        guard let firstTestFile = Self.testFITSFiles.first else {
+            throw TestSkip("No FITS test files found")
         }
         
-        let image = try await FITSImageLoader.load(from: testURL)
+        let image = try await FITSImageLoader.load(from: firstTestFile)
         
         let startTime = Date()
         let pixelData = try await image.pixelData(in: nil)
         let duration = Date().timeIntervalSince(startTime)
         
         // Processing 18MB of pixel data should complete within 3 seconds
-        #expect(duration < 3.0)
-        #expect(pixelData.count == 3008 * 3008 * 2)
+        #expect(duration < 3.0, "File: \(firstTestFile.lastPathComponent) pixel data generation took \(duration)s")
+        #expect(pixelData.count == 3008 * 3008 * 2, "File: \(firstTestFile.lastPathComponent) should have correct pixel data size")
     }
     
     // MARK: - Histogram Generation Tests
     
-    @Test("FITS astro image generates scientifically valid histogram")
-    func fitsAstroImageGeneratesHistogram() async throws {
-        let testURL = URL(fileURLWithPath: "\(Self.sampleFilesPath)/\(Self.testFITSFile)")
-        
-        guard FileManager.default.fileExists(atPath: testURL.path) else {
-            throw TestSkip("FITS test file not found")
+    @Test("FITS astro image generates scientifically valid histogram", arguments: testFITSFiles)
+    func fitsAstroImageGeneratesHistogram(testURL: URL) async throws {
+        guard Self.testFITSFiles.count > 0 else {
+            throw TestSkip("No FITS test files found")
         }
         
         let image = try await FITSImageLoader.load(from: testURL)
         let histogram = try await image.generateHistogram()
         
-        #expect(histogram.bitDepth == 16)
-        #expect(histogram.count > 0)
-        #expect(histogram.minimum >= 0.0)
-        #expect(histogram.maximum <= 65535.0)
+        #expect(histogram.bitDepth == 16, "File: \(testURL.lastPathComponent)")
+        #expect(histogram.count > 0, "File: \(testURL.lastPathComponent)")
+        #expect(histogram.minimum >= 0.0, "File: \(testURL.lastPathComponent)")
+        #expect(histogram.maximum <= 65535.0, "File: \(testURL.lastPathComponent)")
         
         // Scientific images should have meaningful statistics
-        #expect(histogram.mean > 0.0)
-        #expect(histogram.standardDeviation > 0.0)
+        #expect(histogram.mean > 0.0, "File: \(testURL.lastPathComponent)")
+        #expect(histogram.standardDeviation > 0.0, "File: \(testURL.lastPathComponent)")
         
         // Verify statistical consistency
-        #expect(histogram.minimum <= histogram.mean)
-        #expect(histogram.mean <= histogram.maximum)
-        #expect(histogram.standardDeviation >= 0.0)
+        #expect(histogram.minimum <= histogram.mean, "File: \(testURL.lastPathComponent)")
+        #expect(histogram.mean <= histogram.maximum, "File: \(testURL.lastPathComponent)")
+        #expect(histogram.standardDeviation >= 0.0, "File: \(testURL.lastPathComponent)")
     }
     
     @Test("FITS histogram generation is reasonably fast for large images")
     func fitsHistogramPerformance() async throws {
-        let testURL = URL(fileURLWithPath: "\(Self.sampleFilesPath)/\(Self.testFITSFile)")
-        
-        guard FileManager.default.fileExists(atPath: testURL.path) else {
-            throw TestSkip("FITS test file not found")
+        // Use first test file for performance testing
+        guard let firstTestFile = Self.testFITSFiles.first else {
+            throw TestSkip("No FITS test files found")
         }
         
-        let image = try await FITSImageLoader.load(from: testURL)
+        let image = try await FITSImageLoader.load(from: firstTestFile)
         
         let startTime = Date()
         let histogram = try await image.generateHistogram()
         let duration = Date().timeIntervalSince(startTime)
         
         // Histogram generation for 9M pixels should complete within 2 seconds
-        #expect(duration < 2.0)
-        #expect(histogram.count == 3008 * 3008)
+        #expect(duration < 2.0, "File: \(firstTestFile.lastPathComponent) histogram generation took \(duration)s")
+        #expect(histogram.count == 3008 * 3008, "File: \(firstTestFile.lastPathComponent)")
     }
     
     // MARK: - Region Extraction Tests
     
-    @Test("FITS astro image extracts accurate region data")
-    func fitsAstroImageExtractsRegionData() async throws {
-        let testURL = URL(fileURLWithPath: "\(Self.sampleFilesPath)/\(Self.testFITSFile)")
-        
-        guard FileManager.default.fileExists(atPath: testURL.path) else {
-            throw TestSkip("FITS test file not found")
+    @Test("FITS astro image extracts accurate region data", arguments: testFITSFiles)
+    func fitsAstroImageExtractsRegionData(testURL: URL) async throws {
+        guard Self.testFITSFiles.count > 0 else {
+            throw TestSkip("No FITS test files found")
         }
         
         let image = try await FITSImageLoader.load(from: testURL)
@@ -377,22 +381,21 @@ END
         let regionData = try await image.pixelData(in: region)
         
         // Verify region data size (100x100 * 2 bytes per pixel)
-        #expect(regionData.count == 100 * 100 * 2)
+        #expect(regionData.count == 100 * 100 * 2, "File: \(testURL.lastPathComponent)")
         
         // Should contain actual image data
         let nonZeroBytes = regionData.contains { $0 != 0 }
-        #expect(nonZeroBytes == true)
+        #expect(nonZeroBytes == true, "File: \(testURL.lastPathComponent) should contain actual image data in region")
     }
     
     @Test("FITS region extraction handles various sizes correctly")
     func fitsRegionExtractionVariousSizes() async throws {
-        let testURL = URL(fileURLWithPath: "\(Self.sampleFilesPath)/\(Self.testFITSFile)")
-        
-        guard FileManager.default.fileExists(atPath: testURL.path) else {
-            throw TestSkip("FITS test file not found")
+        // Use first test file for region testing
+        guard let firstTestFile = Self.testFITSFiles.first else {
+            throw TestSkip("No FITS test files found")
         }
         
-        let image = try await FITSImageLoader.load(from: testURL)
+        let image = try await FITSImageLoader.load(from: firstTestFile)
         
         // Test various region sizes
         let testRegions: [(width: UInt32, height: UInt32, x: UInt32, y: UInt32)] = [
@@ -407,19 +410,18 @@ END
             let regionData = try await image.pixelData(in: region)
             let expectedSize = Int(width) * Int(height) * 2 // 2 bytes per pixel
             
-            #expect(regionData.count == expectedSize)
+            #expect(regionData.count == expectedSize, "File: \(firstTestFile.lastPathComponent) - region \(width)x\(height) at (\(x),\(y))")
         }
     }
     
     @Test("FITS astro image handles boundary conditions for regions")
     func fitsAstroImageHandlesBoundsChecking() async throws {
-        let testURL = URL(fileURLWithPath: "\(Self.sampleFilesPath)/\(Self.testFITSFile)")
-        
-        guard FileManager.default.fileExists(atPath: testURL.path) else {
-            throw TestSkip("FITS test file not found")
+        // Use first test file for bounds checking
+        guard let firstTestFile = Self.testFITSFiles.first else {
+            throw TestSkip("No FITS test files found")
         }
         
-        let image = try await FITSImageLoader.load(from: testURL)
+        let image = try await FITSImageLoader.load(from: firstTestFile)
         
         // Test various out-of-bounds scenarios
         let invalidRegions = [
@@ -440,13 +442,12 @@ END
     
     @Test("FITS region extraction handles edge cases correctly")
     func fitsRegionExtractionEdgeCases() async throws {
-        let testURL = URL(fileURLWithPath: "\(Self.sampleFilesPath)/\(Self.testFITSFile)")
-        
-        guard FileManager.default.fileExists(atPath: testURL.path) else {
-            throw TestSkip("FITS test file not found")
+        // Use first test file for edge case testing
+        guard let firstTestFile = Self.testFITSFiles.first else {
+            throw TestSkip("No FITS test files found")
         }
         
-        let image = try await FITSImageLoader.load(from: testURL)
+        let image = try await FITSImageLoader.load(from: firstTestFile)
         
         // Test edge-touching regions (valid but at boundaries)
         let edgeRegions = [
@@ -460,24 +461,22 @@ END
         for region in edgeRegions {
             let regionData = try await image.pixelData(in: region)
             let expectedSize = Int(region.width) * Int(region.height) * 2
-            #expect(regionData.count == expectedSize)
+            #expect(regionData.count == expectedSize, "File: \(firstTestFile.lastPathComponent) - edge region \(region.width)x\(region.height) at (\(region.x),\(region.y))")
         }
     }
     
     // MARK: - Bayer Pattern Tests
     
-    @Test("FITS astro image correctly detects absence of Bayer pattern")
-    func fitsAstroImageDetectsBayerPattern() async throws {
-        let testURL = URL(fileURLWithPath: "\(Self.sampleFilesPath)/\(Self.testFITSFile)")
-        
-        guard FileManager.default.fileExists(atPath: testURL.path) else {
-            throw TestSkip("FITS test file not found")
+    @Test("FITS astro image correctly detects absence of Bayer pattern", arguments: testFITSFiles)
+    func fitsAstroImageDetectsBayerPattern(testURL: URL) async throws {
+        guard Self.testFITSFiles.count > 0 else {
+            throw TestSkip("No FITS test files found")
         }
         
         let image = try await FITSImageLoader.load(from: testURL)
         
         // Our sample files are likely monochrome, so should not support Bayer
-        #expect(image.supportsBayerDemosaic() == false)
+        #expect(image.supportsBayerDemosaic() == false, "File: \(testURL.lastPathComponent)")
         
         // Attempting demosaic should throw error
         await #expect(throws: AstroImageError.self) {
@@ -487,13 +486,12 @@ END
     
     @Test("FITS Bayer detection handles all pattern types consistently")
     func fitsBayerPatternDetectionConsistency() async throws {
-        let testURL = URL(fileURLWithPath: "\(Self.sampleFilesPath)/\(Self.testFITSFile)")
-        
-        guard FileManager.default.fileExists(atPath: testURL.path) else {
-            throw TestSkip("FITS test file not found")
+        // Use first test file for consistency testing
+        guard let firstTestFile = Self.testFITSFiles.first else {
+            throw TestSkip("No FITS test files found")
         }
         
-        let image = try await FITSImageLoader.load(from: testURL)
+        let image = try await FITSImageLoader.load(from: firstTestFile)
         let supportsBayer = image.supportsBayerDemosaic()
         
         // All Bayer patterns should behave consistently with the same image
@@ -553,6 +551,53 @@ END
     }
     
     // MARK: - Regression Tests
+    
+    @Test("FITS parser handles malformed header block bounds correctly")
+    func fitsParserHandlesMalformedHeaderBlockBounds() async throws {
+        // Create a FITS file with a header that doesn't align with 2880-byte boundaries
+        // This will trigger the bounds error in parseHeader() at line 365
+        let shortHeader = """
+SIMPLE  =                    T / Standard FITS format                          
+BITPIX  =                   16 / Bits per pixel                                
+NAXIS   =                    2 / Number of axes                                
+NAXIS1  =                   10 / Width                                         
+NAXIS2  =                   10 / Height                                        
+END                                                                             
+""".padding(toLength: 1000, withPad: " ", startingAt: 0) // Intentionally not 2880 bytes
+        
+        let headerData = Data(shortHeader.utf8)
+        let imageData = Data(repeating: 0, count: 200) // 10x10 16-bit image
+        let malformedData = headerData + imageData
+        
+        // This should either succeed with proper bounds checking or fail gracefully
+        // Previously this would crash at FITSParser line 365
+        await #expect(throws: (any Error).self) {
+            try await FITSImageLoader.load(data: malformedData, fileName: "malformed_bounds.fits")
+        }
+    }
+    
+    @Test("FITS parser handles incomplete header record bounds")
+    func fitsParserHandlesIncompleteHeaderRecords() async throws {
+        // Create header data that ends mid-record (not aligned to 80-byte boundaries)
+        let incompleteHeader = """
+SIMPLE  =                    T / Standard FITS format                          
+BITPIX  =                   16 / Bits per pixel                                
+NAXIS   =                    2 / Number of axes                                
+NAXIS1  =                   10 / Width                                         
+NAXIS2  =                   10 / Height                                        
+PARTIAL_REC
+""" // This record is incomplete (< 80 chars)
+        
+        let paddedHeader = incompleteHeader.padding(toLength: 2880, withPad: " ", startingAt: 0)
+        let headerData = Data(paddedHeader.utf8)
+        let imageData = Data(repeating: 0, count: 200)
+        let malformedData = headerData + imageData
+        
+        // This should handle incomplete records gracefully without crashing
+        await #expect(throws: (any Error).self) {
+            try await FITSImageLoader.load(data: malformedData, fileName: "incomplete_record.fits")
+        }
+    }
     
     @Test("FITS loader regression test for header parsing edge cases")
     func fitsHeaderParsingRegressionTest() async throws {

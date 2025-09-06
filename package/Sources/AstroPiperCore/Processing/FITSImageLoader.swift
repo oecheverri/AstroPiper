@@ -355,14 +355,23 @@ private struct FITSParser {
         var currentOffset = offset
         
         while currentOffset < data.count {
-            // Read 2880-byte header block
+            // Ensure we don't read beyond the data bounds
             let blockEnd = min(currentOffset + 2880, data.count)
-            let blockData = data[currentOffset..<blockEnd]
+            guard currentOffset < blockEnd else {
+                break
+            }
             
-            // Parse 80-character header records
-            for recordOffset in stride(from: 0, to: blockData.count, by: 80) {
-                let recordEnd = min(recordOffset + 80, blockData.count)
-                let recordData = blockData[recordOffset..<recordEnd]
+            // Parse 80-character header records within this block
+            var recordStart = currentOffset
+            while recordStart < blockEnd {
+                let recordEnd = min(recordStart + 80, blockEnd)
+                
+                // Ensure we have a valid range
+                guard recordStart < recordEnd && recordEnd <= data.count else {
+                    break
+                }
+                
+                let recordData = data[recordStart..<recordEnd]
                 let record = String(data: recordData, encoding: .ascii) ?? ""
                 
                 // Parse keyword = value / comment format
@@ -375,6 +384,8 @@ private struct FITSParser {
                         return FITSHeader(headers: headers)
                     }
                 }
+                
+                recordStart += 80
             }
             
             currentOffset += 2880

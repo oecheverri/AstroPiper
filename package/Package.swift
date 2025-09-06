@@ -25,15 +25,18 @@ let package = Package(
         ),
         .target(
             name: "AstroPiperUI",
-            dependencies: ["AstroPiperCore"]
+            dependencies: ["AstroPiperCore"],
+            exclude: ["Documentation"]
         ),
         .testTarget(
             name: "AstroPiperUITests",
-            dependencies: ["AstroPiperCore", "AstroPiperUI"]
+            dependencies: ["AstroPiperCore", "AstroPiperUI"],
+            resources: [.process("Resources")]
         ),
         .testTarget(
             name: "AstroPiperCoreTests",
-            dependencies: ["AstroPiperCore"]
+            dependencies: ["AstroPiperCore"],
+            resources: [.process("Resources")]
         ),
     ]
 )

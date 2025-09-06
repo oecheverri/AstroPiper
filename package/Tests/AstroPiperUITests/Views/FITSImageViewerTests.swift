@@ -1,7 +1,7 @@
 import Testing
 import SwiftUI
 import Foundation
-@testable import AstroPiper
+@testable import AstroPiperUI
 @testable import AstroPiperCore
 
 @MainActor
@@ -51,7 +51,6 @@ struct FITSImageViewerTests {
     }
     
     @Test func coordinateOverlayDisplaysPixelValues() async throws {
-        let testImage = try MockFITSImageProvider.createMockFITSImage()
         let overlay = CoordinateOverlay(
             wcsInfo: nil,
             imageSize: CGSize(width: 1000, height: 1000)
@@ -60,6 +59,41 @@ struct FITSImageViewerTests {
         let pixelCoords = overlay.pixelCoordinates(for: CGPoint(x: 100, y: 200))
         #expect(pixelCoords.x == 100)
         #expect(pixelCoords.y == 200)
+    }
+    
+    @Test func coordinateOverlayFormatDecWorksCorrectly() throws {
+        // This test verifies the fix for the string formatting crash in CoordinateOverlay.formatDec(_:)
+        // After fix: format string should use %@ for Swift String instead of %s
+        
+        let overlay = CoordinateOverlay(
+            wcsInfo: nil,
+            imageSize: CGSize(width: 100, height: 100)
+        )
+        
+        // Test various declination values that previously caused crashes
+        let testCases: [(input: Double, expectedPrefix: String)] = [
+            (-45.123456, "-"),  // Negative value should have "-" prefix
+            (0.0, "+"),         // Zero should have "+" prefix  
+            (45.123456, "+"),   // Positive value should have "+" prefix
+            (-90.0, "-"),       // Edge case: -90 degrees
+            (90.0, "+")         // Edge case: +90 degrees
+        ]
+        
+        for (decValue, expectedPrefix) in testCases {
+            // This should now work without crashing
+            let result = overlay.formatDec(decValue)
+            
+            // Verify the result format and sign
+            #expect(result.hasPrefix(expectedPrefix))
+            #expect(result.contains("°"))  // Should contain degree symbol
+            #expect(result.contains("'"))  // Should contain minutes symbol  
+            #expect(result.contains("\"")) // Should contain seconds symbol
+            
+            // For specific test values, verify exact formatting
+            if decValue == 0.0 {
+                #expect(result == "+00°00'00.0\"")
+            }
+        }
     }
     
     // MARK: - Metadata Inspector Tests

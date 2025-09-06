@@ -1,7 +1,7 @@
 import Testing
 import SwiftUI
 import Foundation
-@testable import AstroPiper
+@testable import AstroPiperUI
 @testable import AstroPiperCore
 
 @MainActor
@@ -53,7 +53,7 @@ struct FITSImageViewerViewModelTests {
     
     // MARK: - UI State Management Tests
     
-    @Test func viewModelTogglesMet adataOverlay() async throws {
+    @Test func viewModelTogglesMetadataOverlay() async throws {
         let viewModel = FITSImageViewerViewModel()
         
         #expect(viewModel.showMetadataOverlay == false)
@@ -262,7 +262,7 @@ private class MockCoordinateCalculator: CoordinateCalculatorProtocol {
 }
 
 /// Mock statistics calculator for testing
-private class MockStatisticsCalculator: StatisticsCalculatorProtocol {
+private final class MockStatisticsCalculator: StatisticsCalculatorProtocol, @unchecked Sendable {
     var calculateCallCount = 0
     
     func calculateStatistics(
@@ -287,7 +287,7 @@ private class MockStatisticsCalculator: StatisticsCalculatorProtocol {
 }
 
 /// Statistics calculator that always fails for error testing
-private class FailingStatisticsCalculator: StatisticsCalculatorProtocol {
+private final class FailingStatisticsCalculator: StatisticsCalculatorProtocol, @unchecked Sendable {
     func calculateStatistics(
         for region: PixelRegion,
         in image: any AstroImage,
@@ -379,7 +379,7 @@ private struct MockFITSImageProvider {
         var pixelData = Data(capacity: pixelCount * 2)
         
         for _ in 0..<pixelCount {
-            let value = Int16.random(in: 30000...35000) // Realistic astronomical range
+            let value = Int16.random(in: 10000...30000) // Realistic astronomical range
             withUnsafeBytes(of: value) { bytes in
                 pixelData.append(contentsOf: bytes)
             }
@@ -418,7 +418,7 @@ private struct MockFITSImageProvider {
         var pixelData = Data(capacity: pixelCount * 2)
         
         for _ in 0..<pixelCount {
-            let value = Int16.random(in: 30000...35000)
+            let value = Int16.random(in: 10000...30000)
             withUnsafeBytes(of: value) { bytes in
                 pixelData.append(contentsOf: bytes)
             }

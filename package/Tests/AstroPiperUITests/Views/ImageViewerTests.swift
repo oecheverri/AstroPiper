@@ -1,7 +1,7 @@
 import Testing
 import SwiftUI
 import Foundation
-@testable import AstroPiper
+@testable import AstroPiperUI
 @testable import AstroPiperCore
 
 @MainActor
@@ -50,6 +50,53 @@ struct ImageViewerTests {
         // But @State initialization might override this - let's check the actual behavior
         #expect(viewer.image == nil)
     }
+    
+    @Test func imageViewerHandlesFITSPixelDataCorrectly() async throws {
+        // Test that the fix allows 16-bit grayscale FITS data to work correctly
+        let width = 100
+        let height = 100
+        
+        // 16-bit grayscale FITS data (2 bytes per pixel = 20,000 bytes)
+        let pixelData = Data(repeating: 0x42, count: width * height * 2)  // 20,000 bytes
+        let viewer = ImageViewer(image: nil)
+        
+        // After the fix: ImageViewer should handle 16-bit grayscale data correctly
+        // This should now succeed instead of throwing an error
+        
+        do {
+            let cgImage = try viewer.createCGImageForTesting(from: pixelData, width: width, height: height)
+            
+            // Verify the CGImage was created with correct properties
+            #expect(cgImage.width == width)
+            #expect(cgImage.height == height) 
+            #expect(cgImage.bitsPerComponent == 16)  // 16-bit components
+            #expect(cgImage.bitsPerPixel == 16)      // 16 bits per pixel (grayscale)
+            #expect(cgImage.colorSpace?.model == CGColorSpaceModel.monochrome)  // Grayscale
+        } catch {
+            #expect(Bool(false), "CGImage creation should succeed with 16-bit grayscale data, got error: \(error)")
+        }
+    }
+    
+    @Test func imageViewerRejectsInsufficientData() async throws {
+        // Test that we still reject data that's too small
+        let width = 100
+        let height = 100
+        
+        // Only provide 10,000 bytes when we need 20,000 (16-bit grayscale needs 2 bytes per pixel)
+        let pixelData = Data(repeating: 0x42, count: width * height * 1)  // Only 10,000 bytes
+        let viewer = ImageViewer(image: nil)
+        
+        do {
+            let cgImage = try viewer.createCGImageForTesting(from: pixelData, width: width, height: height)
+            #expect(Bool(false), "Should have thrown error for insufficient data, but CGImage creation succeeded")
+        } catch ImageViewerError.invalidPixelData(let message) {
+            // This should still throw an error for insufficient data
+            #expect(message.contains("Expected 20000 bytes"))  // Now expects 16-bit data (100*100*2)
+            #expect(message.contains("got 10000"))  // Actual data we provided
+        } catch {
+            #expect(Bool(false), "Expected ImageViewerError.invalidPixelData, got: \(error)")
+        }
+    }
 }
 
 private struct MockAstroImageProvider {
@@ -57,6 +104,7 @@ private struct MockAstroImageProvider {
         return MockStandardImage(width: 800, height: 600)
     }
 }
+
 
 private struct MockStandardImage: AstroImage {
     let width: Int
