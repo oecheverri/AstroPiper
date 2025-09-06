@@ -3,7 +3,10 @@
     "allow": [
       "WebFetch(domain:fits.gsfc.nasa.gov)",
       "WebFetch(domain:pixinsight.com)",
-      "Bash(swift build)"
+      "Bash(swift build)",
+      "Bash(find:*)",
+      "WebFetch(domain:docs.astropy.org)",
+      "WebFetch(domain:heasarc.gsfc.nasa.gov)"
     ],
     "deny": [],
     "ask": []
