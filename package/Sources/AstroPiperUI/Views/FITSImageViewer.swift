@@ -32,6 +32,9 @@ public struct FITSImageViewer: View {
     /// Control visibility of scientific controls panel
     @State public var showScientificControls: Bool = false
     
+    /// Whether to apply histogram stretching for display
+    @State public var applyHistogramStretch: Bool = false
+    
     /// Current cursor position for coordinate tracking
     @State private var cursorPosition: CGPoint = .zero
     
@@ -145,6 +148,17 @@ public struct FITSImageViewer: View {
                 .buttonStyle(.borderless)
             }
             
+            // Histogram stretch toggle
+            Button {
+                applyHistogramStretch.toggle()
+                reloadImageWithStretchSetting()
+            } label: {
+                Image(systemName: applyHistogramStretch ? "waveform.path" : "waveform")
+                    .font(.title2)
+            }
+            .help("Toggle histogram stretching")
+            .buttonStyle(.borderless)
+            
             // Scientific controls toggle
             Button {
                 showScientificControls.toggle()
@@ -179,6 +193,18 @@ public struct FITSImageViewer: View {
         showScientificControls.toggle()
     }
     
+    /// Reload the image with current stretch setting
+    private func reloadImageWithStretchSetting() {
+        // Create a wrapper that controls stretch behavior
+        if let fitsImage = image as? FITSAstroImage {
+            let stretchableImage = StretchableFITSImage(
+                baseImage: fitsImage,
+                applyStretch: applyHistogramStretch
+            )
+            baseImageViewer = ImageViewer(image: stretchableImage)
+        }
+    }
+    
     // MARK: - Private Methods
     
     /// Extract and setup FITS-specific metadata from the image
@@ -196,6 +222,34 @@ public struct FITSImageViewer: View {
             fitsMetadata = nil
             hasWCSInfo = false
         }
+    }
+}
+
+// MARK: - Stretchable FITS Image Wrapper
+
+/// Wrapper that controls histogram stretching for FITS images
+private struct StretchableFITSImage: AstroImage {
+    let baseImage: FITSAstroImage
+    let applyStretch: Bool
+    
+    var metadata: any AstroImageMetadata {
+        baseImage.metadata
+    }
+    
+    func pixelData(in region: PixelRegion?) async throws -> Data {
+        return try await baseImage.pixelData(in: region, applyAutoStretch: applyStretch)
+    }
+    
+    func generateHistogram() async throws -> HistogramData {
+        return try await baseImage.generateHistogram()
+    }
+    
+    func supportsBayerDemosaic() -> Bool {
+        return baseImage.supportsBayerDemosaic()
+    }
+    
+    func demosaicedImage(bayerPattern: BayerPattern) async throws -> any AstroImage {
+        return try await baseImage.demosaicedImage(bayerPattern: bayerPattern)
     }
 }
 
