@@ -138,46 +138,51 @@ public struct ImageViewer: View {
     /// - Returns: CGImage for display
     /// - Throws: ImageViewerError for conversion failures
     private func createCGImage(from pixelData: Data, width: Int, height: Int) throws -> CGImage {
-        let bytesPerPixel = 3 // RGB
+        // For now, assume grayscale 16-bit data (which is typical for FITS files)
+        // This is a temporary fix - in a full implementation we'd check the actual image metadata
+        let bytesPerPixel = 2 // 16-bit grayscale
         let expectedSize = width * height * bytesPerPixel
         
         guard pixelData.count >= expectedSize else {
             throw ImageViewerError.invalidPixelData("Expected \(expectedSize) bytes, got \(pixelData.count)")
         }
         
-        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        // Use grayscale color space for astronomical images
+        let colorSpace = CGColorSpaceCreateDeviceGray()
         let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.none.rawValue)
         
-        return pixelData.withUnsafeBytes { bytes in
-            guard let baseAddress = bytes.baseAddress else {
-                fatalError("Could not get base address of pixel data")
-            }
-            
-            guard let provider = CGDataProvider(dataInfo: nil, data: baseAddress, size: pixelData.count, releaseData: { _, _, _ in }) else {
-                fatalError("Could not create CGDataProvider")
-            }
-            
-            guard let cgImage = CGImage(
-                width: width,
-                height: height,
-                bitsPerComponent: 8,
-                bitsPerPixel: 24,
-                bytesPerRow: width * bytesPerPixel,
-                space: colorSpace,
-                bitmapInfo: bitmapInfo,
-                provider: provider,
-                decode: nil,
-                shouldInterpolate: true,
-                intent: .defaultIntent
-            ) else {
-                fatalError("Could not create CGImage from pixel data")
-            }
-            
-            return cgImage
+        // Create a safe data provider that properly manages memory
+        guard let provider = CGDataProvider(data: pixelData as CFData) else {
+            throw ImageViewerError.invalidPixelData("Could not create CGDataProvider from pixel data")
         }
+        
+        guard let cgImage = CGImage(
+            width: width,
+            height: height,
+            bitsPerComponent: 16,  // 16 bits per component for FITS data
+            bitsPerPixel: 16,      // 16 bits per pixel for grayscale
+            bytesPerRow: width * bytesPerPixel,
+            space: colorSpace,
+            bitmapInfo: bitmapInfo,
+            provider: provider,
+            decode: nil,
+            shouldInterpolate: true,
+            intent: .defaultIntent
+        ) else {
+            throw ImageViewerError.invalidPixelData("Could not create CGImage from pixel data")
+        }
+        
+        return cgImage
     }
     
     // MARK: - Utility Functions
+    
+    // MARK: - Testing Support
+    
+    /// Internal method exposed for testing pixel format handling
+    internal func createCGImageForTesting(from pixelData: Data, width: Int, height: Int) throws -> CGImage {
+        return try createCGImage(from: pixelData, width: width, height: height)
+    }
     
     /// Calculate the scale needed to fit the image within the given view size
     /// - Parameter viewSize: Available view dimensions
