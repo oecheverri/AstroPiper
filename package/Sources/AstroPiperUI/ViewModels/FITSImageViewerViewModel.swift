@@ -309,23 +309,31 @@ public final class FITSImageViewerViewModel: ObservableObject {
     /// Calculate statistics for selected region
     private func calculateRegionStatistics() async {
         guard let region = selectedRegion,
-              image != nil else { return }
+              let image = image else { return }
         
-        isAnalyzing = true
-        analysisError = nil
+        await MainActor.run {
+            isAnalyzing = true
+            analysisError = nil
+        }
         
-        // TODO: Fix sendable statistics calculator issue
-        // Temporarily using mock statistics to get project compiling
-        regionStatistics = RegionStatistics(
-            mean: Double.random(in: 1000...30000),
-            standardDeviation: Double.random(in: 100...1000),
-            minimum: Double.random(in: 0...1000),
-            maximum: Double.random(in: 30000...65000),
-            median: Double.random(in: 15000...25000),
-            pixelCount: Int(region.width * region.height)
-        )
-        
-        isAnalyzing = false
+        do {
+            // Perform statistics calculation in background
+            let stats = try await statisticsCalculator.calculateStatistics(
+                for: region,
+                in: image,
+                useRawValues: showRawPixelValues
+            )
+            
+            await MainActor.run {
+                regionStatistics = stats
+                isAnalyzing = false
+            }
+        } catch {
+            await MainActor.run {
+                analysisError = error
+                isAnalyzing = false
+            }
+        }
     }
     
     /// Generate export data string
@@ -402,7 +410,7 @@ public protocol CoordinateCalculatorProtocol {
 }
 
 /// Protocol for statistical calculations
-public protocol StatisticsCalculatorProtocol {
+public protocol StatisticsCalculatorProtocol: Sendable {
     func calculateStatistics(
         for region: PixelRegion,
         in image: any AstroImage,
@@ -423,7 +431,7 @@ public struct CoordinateCalculator: CoordinateCalculatorProtocol {
 }
 
 /// Default statistics calculator implementation
-public struct StatisticsCalculator: StatisticsCalculatorProtocol {
+public struct StatisticsCalculator: StatisticsCalculatorProtocol, Sendable {
     public init() {}
     
     public func calculateStatistics(

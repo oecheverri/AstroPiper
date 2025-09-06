@@ -8,56 +8,56 @@
 import SwiftUI
 import AstroPiperUI
 import AstroPiperCore
+import UniformTypeIdentifiers
 
 struct ContentView: View {
     @State private var selectedImage: (any AstroImage)?
     @State private var isLoading = false
     @State private var loadingError: Error?
+    @State private var showingFilePicker = false
     
     var body: some View {
-        NavigationView {
-            VStack(spacing: 20) {
-                // Header
-                VStack(spacing: 8) {
-                    Image(systemName: "star.circle.fill")
-                        .font(.system(size: 60))
-                        .foregroundColor(.blue)
-                    
-                    Text("AstroPiper")
-                        .font(.largeTitle)
-                        .fontWeight(.bold)
-                    
-                    Text("Professional Astronomical Image Viewer")
-                        .font(.subheadline)
+        Group {
+            if let image = selectedImage {
+                // Full-screen FITS viewer when image is loaded
+                if let fitsImage = image as? FITSAstroImage {
+                    FITSImageViewer(image: fitsImage)
+                } else {
+                    ImageViewer(image: image)
+                }
+            } else if isLoading {
+                // Loading state
+                VStack(spacing: 16) {
+                    ProgressView()
+                        .scaleEffect(1.5)
+                    Text("Loading FITS image...")
+                        .font(.headline)
                         .foregroundColor(.secondary)
                 }
-                .padding()
-                
-                Divider()
-                
-                // Content area
-                if let image = selectedImage {
-                    // Show FITS viewer with loaded image
-                    if let fitsImage = image as? FITSAstroImage {
-                        FITSImageViewer(image: fitsImage)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    } else {
-                        // Standard image viewer
-                        ImageViewer(image: image)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    }
-                } else if isLoading {
-                    // Loading state
-                    VStack(spacing: 16) {
-                        ProgressView()
-                            .scaleEffect(1.5)
-                        Text("Loading FITS image...")
-                            .font(.headline)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color(NSColor.windowBackgroundColor))
+            } else {
+                // Welcome state with header
+                VStack(spacing: 20) {
+                    // Header
+                    VStack(spacing: 8) {
+                        Image(systemName: "star.circle.fill")
+                            .font(.system(size: 60))
+                            .foregroundColor(.blue)
+                        
+                        Text("AstroPiper")
+                            .font(.largeTitle)
+                            .fontWeight(.bold)
+                        
+                        Text("Professional Astronomical Image Viewer")
+                            .font(.subheadline)
                             .foregroundColor(.secondary)
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    // Welcome state
+                    .padding()
+                    
+                    Divider()
+                    
+                    // Welcome content
                     VStack(spacing: 24) {
                         VStack(spacing: 16) {
                             Image(systemName: "photo.badge.plus")
@@ -75,10 +75,10 @@ struct ContentView: View {
                                 .padding(.horizontal)
                         }
                         
-                        Button(action: loadSampleFITSImage) {
+                        Button(action: { showingFilePicker = true }) {
                             HStack {
-                                Image(systemName: "star.fill")
-                                Text("Load Sample FITS Image")
+                                Image(systemName: "doc.badge.plus")
+                                Text("Select FITS File")
                             }
                             .font(.headline)
                             .foregroundColor(.white)
@@ -96,25 +96,53 @@ struct ContentView: View {
                                 .padding()
                         }
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    
+                    Spacer()
                 }
-                
-                Spacer()
+                .padding()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color(NSColor.windowBackgroundColor))
             }
-            .padding()
         }
-        .navigationTitle("AstroPiper")
+        .navigationTitle(selectedImage != nil ? "AstroPiper" : "")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button("Load FITS") {
-                    loadSampleFITSImage()
+                Button("Select File") {
+                    showingFilePicker = true
                 }
                 .disabled(isLoading)
             }
         }
+        .fileImporter(
+            isPresented: $showingFilePicker,
+            allowedContentTypes: [
+                UTType.data,
+                UTType(filenameExtension: "fits") ?? .data,
+                UTType(filenameExtension: "fit") ?? .data,
+                UTType(filenameExtension: "fts") ?? .data
+            ],
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let urls):
+                if let url = urls.first {
+                    // Start accessing the security-scoped resource
+                    if url.startAccessingSecurityScopedResource() {
+                        loadFITSImage(from: url)
+                        // Note: We'll stop accessing when done loading
+                    } else {
+                        loadingError = NSError(domain: "AstroPiper", code: 403, userInfo: [
+                            NSLocalizedDescriptionKey: "Failed to gain access to the selected file"
+                        ])
+                    }
+                }
+            case .failure(let error):
+                loadingError = error
+            }
+        }
     }
     
-    private func loadSampleFITSImage() {
+    private func loadFITSImage(from url: URL) {
         guard !isLoading else { return }
         
         isLoading = true
@@ -122,26 +150,12 @@ struct ContentView: View {
         
         Task {
             do {
-                // Try to load a sample FITS file from the Sample Files directory
-                let sampleFilesURL = URL(fileURLWithPath: "/Users/oecheverri/Developer/AstroPiper/Sample Files")
-                let contents = try FileManager.default.contentsOfDirectory(at: sampleFilesURL, includingPropertiesForKeys: nil)
+                // Load FITS file from selected URL
+                let image = try await FITSImageLoader.load(from: url)
                 
-                // Find the first FITS file
-                if let fitsFile = contents.first(where: { $0.pathExtension.lowercased() == "fit" }) {
-                    let image = try await FITSImageLoader.load(from: fitsFile)
-                    
-                    await MainActor.run {
-                        selectedImage = image
-                        isLoading = false
-                    }
-                } else {
-                    // No FITS files found, create a mock for demo
-                    await MainActor.run {
-                        loadingError = NSError(domain: "AstroPiper", code: 404, userInfo: [
-                            NSLocalizedDescriptionKey: "No FITS files found in Sample Files directory"
-                        ])
-                        isLoading = false
-                    }
+                await MainActor.run {
+                    selectedImage = image
+                    isLoading = false
                 }
             } catch {
                 await MainActor.run {
@@ -149,8 +163,28 @@ struct ContentView: View {
                     isLoading = false
                 }
             }
+            
+            // Stop accessing the security-scoped resource when done
+            url.stopAccessingSecurityScopedResource()
         }
     }
+}
+
+// MARK: - UTType Extension for FITS Files
+
+extension UTType {
+    static let fitsFile: UTType = {
+        // Try to create a proper FITS UTType
+        if let fitsType = UTType(filenameExtension: "fits") {
+            return fitsType
+        }
+        if let fitType = UTType(filenameExtension: "fit") {
+            return fitType
+        }
+        // Create a custom UTType for FITS files
+        return UTType(exportedAs: "org.fits.astronomical-image", 
+                     conformingTo: .data)
+    }()
 }
 
 #Preview {

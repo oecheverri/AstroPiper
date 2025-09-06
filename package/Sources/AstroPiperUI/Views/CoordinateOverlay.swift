@@ -341,13 +341,13 @@ public struct CoordinateOverlay: View {
     }
     
     /// Format Dec in degrees:minutes:seconds
-    private func formatDec(_ dec: Double) -> String {
+    internal func formatDec(_ dec: Double) -> String {
         let sign = dec >= 0 ? "+" : "-"
         let absDec = abs(dec)
         let d = Int(absDec)
         let m = Int((absDec - Double(d)) * 60.0)
         let s = ((absDec - Double(d)) * 60.0 - Double(m)) * 60.0
-        return String(format: "%s%02d°%02d'%04.1f\"", sign, d, m, s)
+        return String(format: "%@%02d°%02d'%04.1f\"", sign, d, m, s)
     }
 }
 
